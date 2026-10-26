@@ -1,0 +1,239 @@
+{
+  "entities": {
+    "Profile": {
+      "title": "Profile",
+      "description": "Private user account profile owned strictly by the authenticated user.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the account owner."
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Owner display name."
+        },
+        "avatarUrl": {
+          "type": "string",
+          "maxLength": 512,
+          "description": "Optional public avatar path or URL."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Account profile creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Account profile last update timestamp."
+        }
+      },
+      "required": ["ownerId", "displayName", "avatarUrl", "createdAt", "updatedAt"]
+    },
+    "AnonymousPage": {
+      "title": "AnonymousPage",
+      "description": "Publicly addressable anonymous messaging page configuration.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the page owner."
+        },
+        "pageName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Public display title shown to visitors."
+        },
+        "username": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 30,
+          "pattern": "^[a-z0-9_\\-]+$",
+          "description": "Unique lowercase URL slug."
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 280,
+          "description": "Optional prompt or bio displayed on the public page."
+        },
+        "avatarPath": {
+          "type": "string",
+          "maxLength": 512,
+          "description": "Optional public avatar storage key."
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Whether the public page is active and visible."
+        },
+        "allowSubmissions": {
+          "type": "boolean",
+          "description": "Whether new anonymous submissions are currently accepted."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Update timestamp."
+        }
+      },
+      "required": [
+        "ownerId",
+        "pageName",
+        "username",
+        "description",
+        "avatarPath",
+        "isActive",
+        "allowSubmissions",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "UsernameClaim": {
+      "title": "UsernameClaim",
+      "description": "Atomic uniqueness claim mapping a lowercase username slug to an anonymous page and owner.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Owner UID."
+        },
+        "pageId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Target anonymousPage document ID."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Claim creation timestamp."
+        }
+      },
+      "required": ["ownerId", "pageId", "createdAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Private anonymous submission stored strictly for a single recipient.",
+      "type": "object",
+      "properties": {
+        "recipientUserId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Recipient owner UID derived server-side from the target page."
+        },
+        "anonymousPageId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Target anonymous page document ID."
+        },
+        "messageText": {
+          "type": "string",
+          "maxLength": 2000,
+          "description": "Anonymous text message (empty string if image-only)."
+        },
+        "imageStoragePath": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "Private randomized storage object path (never base64)."
+        },
+        "hasImage": {
+          "type": "boolean",
+          "description": "Whether this message has an attached image."
+        },
+        "isRead": {
+          "type": "boolean",
+          "description": "Persistent read status controlled by the recipient."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Submission timestamp."
+        }
+      },
+      "required": [
+        "recipientUserId",
+        "anonymousPageId",
+        "messageText",
+        "imageStoragePath",
+        "hasImage",
+        "isRead",
+        "createdAt"
+      ]
+    },
+    "AbuseReport": {
+      "title": "AbuseReport",
+      "description": "Public page abuse or impersonation report.",
+      "type": "object",
+      "properties": {
+        "targetPageId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Reported anonymous page ID."
+        },
+        "targetUsername": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 30,
+          "pattern": "^[a-z0-9_\\-]+$",
+          "description": "Reported page username."
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 60,
+          "description": "Report category."
+        },
+        "details": {
+          "type": "string",
+          "maxLength": 1000,
+          "description": "Additional context."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Submission timestamp."
+        }
+      },
+      "required": ["targetPageId", "targetUsername", "reason", "details", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/profiles/{userId}": {
+      "schema": "Profile",
+      "description": "Private user account profiles keyed by Firebase Auth UID."
+    },
+    "/anonymous_pages/{pageId}": {
+      "schema": "AnonymousPage",
+      "description": "Anonymous messaging pages owned by registered users."
+    },
+    "/usernames/{username}": {
+      "schema": "UsernameClaim",
+      "description": "Unique lowercase username claims."
+    },
+    "/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Private inbox messages addressed to individual recipients."
+    },
+    "/abuse_reports/{reportId}": {
+      "schema": "AbuseReport",
+      "description": "Abuse and safety reports submitted on public pages."
+    }
+  }
+}

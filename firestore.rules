@@ -1,0 +1,303 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Default-Deny Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // Hardened Global Primitives
+    // =========================================================================
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidUsernameSlug(slug) {
+      return slug is string && slug.size() >= 3 && slug.size() <= 30 && slug.matches('^[a-z0-9_\\-]+$');
+    }
+
+    // =========================================================================
+    // Validation Blueprints (Anti-Update-Gap)
+    // =========================================================================
+    function isValidProfile(data) {
+      return data.keys().hasAll(['ownerId', 'displayName', 'avatarUrl', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'displayName', 'avatarUrl', 'createdAt', 'updatedAt'])
+        && data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 && data.ownerId.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.ownerId == request.auth.uid
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80
+        && data.avatarUrl is string && data.avatarUrl.size() <= 512
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAnonymousPage(data) {
+      return data.keys().hasAll([
+          'ownerId',
+          'pageName',
+          'username',
+          'description',
+          'avatarPath',
+          'isActive',
+          'allowSubmissions',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId',
+          'pageName',
+          'username',
+          'description',
+          'avatarPath',
+          'isActive',
+          'allowSubmissions',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 && data.ownerId.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.ownerId == request.auth.uid
+        && data.pageName is string && data.pageName.size() >= 1 && data.pageName.size() <= 80
+        && isValidUsernameSlug(data.username)
+        && data.description is string && data.description.size() <= 280
+        && data.avatarPath is string && data.avatarPath.size() <= 512
+        && data.isActive is bool
+        && data.allowSubmissions is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidUsernameClaim(data) {
+      return data.keys().hasAll(['ownerId', 'pageId', 'createdAt'])
+        && data.keys().hasOnly(['ownerId', 'pageId', 'createdAt'])
+        && data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 && data.ownerId.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.ownerId == request.auth.uid
+        && isValidId(data.pageId)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasAll([
+          'recipientUserId',
+          'anonymousPageId',
+          'messageText',
+          'imageStoragePath',
+          'hasImage',
+          'isRead',
+          'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'recipientUserId',
+          'anonymousPageId',
+          'messageText',
+          'imageStoragePath',
+          'hasImage',
+          'isRead',
+          'createdAt'
+        ])
+        && isValidId(data.recipientUserId)
+        && isValidId(data.anonymousPageId)
+        && data.messageText is string && data.messageText.size() <= 2000
+        && data.imageStoragePath is string && data.imageStoragePath.size() <= 256
+        && data.hasImage is bool
+        && (data.messageText.size() > 0 || data.hasImage == true)
+        && (data.hasImage == true ? data.imageStoragePath.size() > 0 : data.imageStoragePath.size() == 0)
+        && data.isRead is bool
+        && data.createdAt is timestamp;
+    }
+
+    function isValidAbuseReport(data) {
+      return data.keys().hasAll(['targetPageId', 'targetUsername', 'reason', 'details', 'createdAt'])
+        && data.keys().hasOnly(['targetPageId', 'targetUsername', 'reason', 'details', 'createdAt'])
+        && isValidId(data.targetPageId)
+        && isValidUsernameSlug(data.targetUsername)
+        && data.reason is string && data.reason.size() >= 3 && data.reason.size() <= 60
+        && data.details is string && data.details.size() <= 1000
+        && data.createdAt is timestamp;
+    }
+
+    // =========================================================================
+    // 1. Private User Profiles (/profiles/{userId})
+    // =========================================================================
+    match /profiles/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+      allow list: if false;
+
+      allow create: if isVerifiedUser()
+        && isValidId(userId)
+        && request.auth.uid == userId
+        && isValidProfile(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser()
+        && isValidId(userId)
+        && request.auth.uid == userId
+        && isValidProfile(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'avatarUrl', 'updatedAt']);
+
+      allow delete: if isVerifiedUser()
+        && isValidId(userId)
+        && request.auth.uid == userId;
+    }
+
+    // =========================================================================
+    // 2. Anonymous Pages (/anonymous_pages/{pageId})
+    // =========================================================================
+    match /anonymous_pages/{pageId} {
+      allow get: if isValidId(pageId)
+        && (
+          resource == null
+          || existing().isActive == true
+          || (isSignedIn() && existing().ownerId == request.auth.uid)
+        );
+
+      allow list: if isSignedIn() && existing().ownerId == request.auth.uid;
+
+      allow create: if isVerifiedUser()
+        && isValidId(pageId)
+        && isValidAnonymousPage(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && getAfter(/databases/$(database)/documents/usernames/$(incoming().username)).data.pageId == pageId
+        && getAfter(/databases/$(database)/documents/usernames/$(incoming().username)).data.ownerId == request.auth.uid;
+
+      allow update: if isVerifiedUser()
+        && isValidId(pageId)
+        && isValidAnonymousPage(incoming())
+        && existing().ownerId == request.auth.uid
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action 1: Update page details or availability without changing username
+          (
+            incoming().username == existing().username
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'pageName',
+              'description',
+              'avatarPath',
+              'isActive',
+              'allowSubmissions',
+              'updatedAt'
+            ])
+          )
+          ||
+          // Action 2: Rename username with atomic claim sync
+          (
+            incoming().username != existing().username
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'username',
+              'pageName',
+              'description',
+              'avatarPath',
+              'isActive',
+              'allowSubmissions',
+              'updatedAt'
+            ])
+            && !existsAfter(/databases/$(database)/documents/usernames/$(existing().username))
+            && getAfter(/databases/$(database)/documents/usernames/$(incoming().username)).data.pageId == pageId
+          )
+        );
+
+      allow delete: if isVerifiedUser()
+        && isValidId(pageId)
+        && existing().ownerId == request.auth.uid
+        && !existsAfter(/databases/$(database)/documents/usernames/$(existing().username));
+    }
+
+    // =========================================================================
+    // 3. Unique Username Registry (/usernames/{username})
+    // =========================================================================
+    match /usernames/{username} {
+      allow get: if isValidUsernameSlug(username);
+      allow list: if false;
+
+      allow create: if isVerifiedUser()
+        && isValidUsernameSlug(username)
+        && isValidUsernameClaim(incoming())
+        && incoming().createdAt == request.time
+        && getAfter(/databases/$(database)/documents/anonymous_pages/$(incoming().pageId)).data.username == username
+        && getAfter(/databases/$(database)/documents/anonymous_pages/$(incoming().pageId)).data.ownerId == request.auth.uid;
+
+      allow update: if false;
+
+      allow delete: if isVerifiedUser()
+        && isValidUsernameSlug(username)
+        && existing().ownerId == request.auth.uid;
+    }
+
+    // =========================================================================
+    // 4. Private Inbox Messages (/messages/{messageId})
+    // =========================================================================
+    match /messages/{messageId} {
+      allow get: if isVerifiedUser()
+        && isValidId(messageId)
+        && existing().recipientUserId == request.auth.uid;
+
+      allow list: if isVerifiedUser()
+        && existing().recipientUserId == request.auth.uid;
+
+      // Anonymous visitors can submit only to active pages that accept submissions,
+      // and recipientUserId MUST match the target page's true ownerId.
+      allow create: if isValidId(messageId)
+        && isValidMessage(incoming())
+        && incoming().isRead == false
+        && incoming().createdAt == request.time
+        && exists(/databases/$(database)/documents/anonymous_pages/$(incoming().anonymousPageId))
+        && get(/databases/$(database)/documents/anonymous_pages/$(incoming().anonymousPageId)).data.isActive == true
+        && get(/databases/$(database)/documents/anonymous_pages/$(incoming().anonymousPageId)).data.allowSubmissions == true
+        && get(/databases/$(database)/documents/anonymous_pages/$(incoming().anonymousPageId)).data.ownerId == incoming().recipientUserId;
+
+      // Action: Mark message read/unread by verified recipient only
+      allow update: if isVerifiedUser()
+        && isValidId(messageId)
+        && isValidMessage(incoming())
+        && existing().recipientUserId == request.auth.uid
+        && incoming().recipientUserId == existing().recipientUserId
+        && incoming().anonymousPageId == existing().anonymousPageId
+        && incoming().messageText == existing().messageText
+        && incoming().imageStoragePath == existing().imageStoragePath
+        && incoming().hasImage == existing().hasImage
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly(['isRead']);
+
+      allow delete: if isVerifiedUser()
+        && isValidId(messageId)
+        && existing().recipientUserId == request.auth.uid;
+    }
+
+    // =========================================================================
+    // 5. Public Abuse Reports (/abuse_reports/{reportId})
+    // =========================================================================
+    match /abuse_reports/{reportId} {
+      allow read: if false;
+
+      allow create: if isValidId(reportId)
+        && isValidAbuseReport(incoming())
+        && incoming().createdAt == request.time
+        && exists(/databases/$(database)/documents/anonymous_pages/$(incoming().targetPageId));
+
+      allow update, delete: if false;
+    }
+  }
+}

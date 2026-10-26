@@ -1,0 +1,6 @@
+{
+  "name": "Quietbox",
+  "description": "Private, calm anonymous messaging pages with encrypted private inboxes and secure image attachments.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
