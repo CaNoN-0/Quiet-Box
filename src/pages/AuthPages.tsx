@@ -1,8 +1,84 @@
 import React, { useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
-import { AlertCircle, CheckCircle2, Mail } from 'lucide-react';
-import { mapFirebaseAuthError, useAuth } from '../context/AuthContext';
+import { AlertCircle, Check, CheckCircle2, Copy, ExternalLink, Mail } from 'lucide-react';
+import { mapFirebaseAuthError, MappedAuthError, useAuth } from '../context/AuthContext';
 import { QuietboxMark, SiteFooter, TopNav } from '../components/Layout';
+
+function AuthErrorNotice({
+  authError,
+  projectId,
+}: {
+  authError: MappedAuthError;
+  projectId: string;
+}) {
+  const [copiedDomain, setCopiedDomain] = useState(false);
+
+  const handleCopyDomain = async () => {
+    if (!authError.unauthorizedDomain) return;
+    try {
+      await navigator.clipboard.writeText(authError.unauthorizedDomain);
+      setCopiedDomain(true);
+      setTimeout(() => setCopiedDomain(false), 2000);
+    } catch {
+      // Fallback ignored if clipboard blocked
+    }
+  };
+
+  return (
+    <div className="mt-5 rounded-xl border border-red-200 bg-red-50/70 p-4 text-sm text-red-800">
+      <div className="flex items-start gap-2.5">
+        <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+        <div className="min-w-0 flex-1 space-y-2.5">
+          <p>{authError.message}</p>
+
+          {authError.unauthorizedDomain && (
+            <div className="space-y-2 rounded-lg border border-red-200/90 bg-white/90 p-3 text-xs text-slate-800">
+              <p className="font-medium text-slate-700">
+                1. Copy this hostname and add it under <strong>Authorized domains</strong> in Firebase Auth:
+              </p>
+              <div className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5">
+                <code className="truncate font-mono text-[11px] text-slate-900">
+                  {authError.unauthorizedDomain}
+                </code>
+                <button
+                  type="button"
+                  onClick={handleCopyDomain}
+                  className="inline-flex items-center gap-1 rounded-md bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+                >
+                  {copiedDomain ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedDomain ? 'Copied' : 'Copy'}</span>
+                </button>
+              </div>
+              {projectId && (
+                <a
+                  href={`https://console.firebase.google.com/project/${projectId}/authentication/settings`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 font-semibold text-violet-700 hover:underline"
+                >
+                  <span>2. Open Firebase Auth Settings ({projectId})</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              )}
+            </div>
+          )}
+
+          {authError.needsEmailProviderSetup && projectId && (
+            <a
+              href={`https://console.firebase.google.com/project/${projectId}/authentication/providers`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 font-semibold text-red-900 underline underline-offset-4"
+            >
+              <span>Open Firebase Auth Providers ({projectId})</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function GoogleButton({
   onClick,
@@ -51,8 +127,7 @@ export function SignUpPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [showConsoleHint, setShowConsoleHint] = useState(false);
+  const [authError, setAuthError] = useState<MappedAuthError | null>(null);
 
   if (!loading && user) {
     return <Navigate to="/dashboard" replace />;
@@ -60,11 +135,10 @@ export function SignUpPage() {
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    setShowConsoleHint(false);
+    setAuthError(null);
 
     if (password.length < 8) {
-      setError('Password must be at least 8 characters long.');
+      setAuthError({ message: 'Password must be at least 8 characters long.' });
       return;
     }
 
@@ -73,22 +147,20 @@ export function SignUpPage() {
       await signUpWithEmail(email, password, displayName);
       navigate('/dashboard');
     } catch (err) {
-      const mapped = mapFirebaseAuthError(err);
-      setError(mapped.message);
-      setShowConsoleHint(Boolean(mapped.needsEmailProviderSetup));
+      setAuthError(mapFirebaseAuthError(err));
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleGoogle = async () => {
-    setError(null);
+    setAuthError(null);
     setSubmitting(true);
     try {
       await signInWithGoogle();
       navigate('/dashboard');
     } catch (err) {
-      setError(mapFirebaseAuthError(err).message);
+      setAuthError(mapFirebaseAuthError(err));
     } finally {
       setSubmitting(false);
     }
@@ -110,26 +182,7 @@ export function SignUpPage() {
             Open your private inbox and claim your personal anonymous page.
           </p>
 
-          {error && (
-            <div className="mt-5 rounded-xl border border-red-200 bg-red-50/70 p-4 text-sm text-red-800">
-              <div className="flex items-start gap-2.5">
-                <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                <div>
-                  <p>{error}</p>
-                  {showConsoleHint && projectId && (
-                    <a
-                      href={`https://console.firebase.google.com/project/${projectId}/authentication/providers`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-2 inline-block font-semibold text-red-900 underline underline-offset-4"
-                    >
-                      Open Firebase Auth Providers ({projectId})
-                    </a>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
+          {authError && <AuthErrorNotice authError={authError} projectId={projectId} />}
 
           <div className="mt-6">
             <GoogleButton
@@ -224,8 +277,7 @@ export function SignInPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [showConsoleHint, setShowConsoleHint] = useState(false);
+  const [authError, setAuthError] = useState<MappedAuthError | null>(null);
 
   if (!loading && user) {
     return <Navigate to="/dashboard" replace />;
@@ -233,29 +285,26 @@ export function SignInPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    setShowConsoleHint(false);
+    setAuthError(null);
     setSubmitting(true);
     try {
       await signInWithEmail(email, password);
       navigate('/dashboard');
     } catch (err) {
-      const mapped = mapFirebaseAuthError(err);
-      setError(mapped.message);
-      setShowConsoleHint(Boolean(mapped.needsEmailProviderSetup));
+      setAuthError(mapFirebaseAuthError(err));
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleGoogle = async () => {
-    setError(null);
+    setAuthError(null);
     setSubmitting(true);
     try {
       await signInWithGoogle();
       navigate('/dashboard');
     } catch (err) {
-      setError(mapFirebaseAuthError(err).message);
+      setAuthError(mapFirebaseAuthError(err));
     } finally {
       setSubmitting(false);
     }
@@ -277,26 +326,7 @@ export function SignInPage() {
             Access your private messages and anonymous page settings.
           </p>
 
-          {error && (
-            <div className="mt-5 rounded-xl border border-red-200 bg-red-50/70 p-4 text-sm text-red-800">
-              <div className="flex items-start gap-2.5">
-                <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                <div>
-                  <p>{error}</p>
-                  {showConsoleHint && projectId && (
-                    <a
-                      href={`https://console.firebase.google.com/project/${projectId}/authentication/providers`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-2 inline-block font-semibold text-red-900 underline underline-offset-4"
-                    >
-                      Open Firebase Auth Providers ({projectId})
-                    </a>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
+          {authError && <AuthErrorNotice authError={authError} projectId={projectId} />}
 
           <div className="mt-6">
             <GoogleButton

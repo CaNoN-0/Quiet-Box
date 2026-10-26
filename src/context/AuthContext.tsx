@@ -44,14 +44,38 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-export function mapFirebaseAuthError(err: any): { message: string; needsEmailProviderSetup?: boolean } {
+export interface MappedAuthError {
+  message: string;
+  needsEmailProviderSetup?: boolean;
+  unauthorizedDomain?: string;
+}
+
+export function mapFirebaseAuthError(err: any): MappedAuthError {
   const code = err?.code || '';
+  const rawMessage = err instanceof Error ? err.message : String(err || '');
+
+  if (code === 'auth/unauthorized-domain' || rawMessage.includes('auth/unauthorized-domain')) {
+    const currentHost =
+      typeof window !== 'undefined' && window.location?.hostname
+        ? window.location.hostname
+        : 'current app domain';
+    return {
+      message: `Google popup sign-in requires "${currentHost}" to be listed under Authorized Domains in your Firebase project.`,
+      unauthorizedDomain: currentHost,
+    };
+  }
+
   switch (code) {
     case 'auth/operation-not-allowed':
       return {
         message:
           'Email/Password sign-in is not yet enabled in your Firebase Console. You can sign in immediately with Google, or enable Email/Password in Firebase Console > Authentication > Sign-in method.',
         needsEmailProviderSetup: true,
+      };
+    case 'auth/popup-blocked':
+      return {
+        message:
+          'Your browser blocked the sign-in popup window. Please allow popups for this site and try again.',
       };
     case 'auth/email-already-in-use':
       return { message: 'An account with this email address already exists. Please sign in instead.' };
